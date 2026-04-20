@@ -25,36 +25,36 @@ public class LogicUI : MonoBehaviour
         // affichage de A
         if (inputA)
         {
-            aText.text = "A : 1 (ON)";
+            aText.text = "1 (ON)";
             aText.color = Color.green;
         }
         else
         {
-            aText.text = "A : 0 (OFF)";
+            aText.text = "0 (OFF)";
             aText.color = Color.red;
         }
 
         // affichage de B
         if (inputB)
         {
-            bText.text = "B : 1 (ON)";
+            bText.text = "1 (ON)";
             bText.color = Color.green;
         }
         else
         {
-            bText.text = "B : 0 (OFF)";
+            bText.text = "0 (OFF)";
             bText.color = Color.red;
         }
 
         // affichage de la sortie
         if (output)
         {
-            outputText.text = "Sortie : 1 OUVERT";
+            outputText.text = "1 OUVERT";
             outputText.color = Color.green;
         }
         else
         {
-            outputText.text = "Sortie : 0 FERMÉ";
+            outputText.text = "0 FERMÉ";
             outputText.color = Color.red;
         }
     }

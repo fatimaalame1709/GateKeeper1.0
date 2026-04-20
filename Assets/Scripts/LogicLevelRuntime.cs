@@ -5,7 +5,8 @@ public enum GateType
 {
     AND,
     OR,
-    NOT
+    NOT,
+    XOR
 }
 
 // cette classe sert juste à stocker les données d’un niveau

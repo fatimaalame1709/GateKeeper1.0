@@ -1,5 +1,7 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using System.Collections.Generic;
+using TMPro;
 
 public class GameManager : MonoBehaviour
 {
@@ -29,18 +31,51 @@ public class GameManager : MonoBehaviour
     // parent qui contient les objets du niveau
     public Transform levelParent;
 
+    // trigger de sortie déjà placé dans la scène
+    public Transform exitTriggerTransform;
+
     [Header("Settings")]
     // taille d'une case du labyrinthe
     public float cellSize = 2f;
+
 
     [Header("UI")]
     // script qui gère l'affichage logique à l'écran
     public LogicUI logicUI;
 
+    // script qui gère les vies et le niveau en haut à gauche
+    public StatusUI statusUI;
+
+    // script qui gère la mini-map
+    public MiniMapUI miniMapUI;
+
+    // script qui gère le timer affiché
+    public Timer timerUI;
+
+    // texte d'instruction affiché en haut au centre
+    public TMP_Text levelInstructionText;
+
+    // panel du haut qui contient les instructions
+    public GameObject instructionsPanel;
+
+    public GameObject tutorialMessagePanel;
+    public TextMeshProUGUI tutorialMessageText;
+
+    public GameObject tutorialCompletePanel;
+    public int tutorialLevelCount = 4;
+
+
     [Header("Logic State")]
+    
     // état du bouton A
     public bool inputA = false;
 
+    // nombre de vies du joueur
+    public int lives = 3;
+
+    // score du joueur
+    public int score = 0;
+    
     // état du bouton B
     public bool inputB = false;
 
@@ -50,6 +85,9 @@ public class GameManager : MonoBehaviour
     // référence vers la porte créée dans la scène
     private GameObject currentDoor;
 
+    // maze actuellement utilisé
+    private int[,] currentMaze;    
+
     // liste des niveaux
     public List<LogicLevelRuntime> levels = new List<LogicLevelRuntime>();
 
@@ -58,6 +96,7 @@ public class GameManager : MonoBehaviour
 
     // dit si on a dépassé le dernier niveau
     private bool gameFinished = false;
+
 
     [Header("Adaptive Difficulty")]
     // niveau de difficulté actuel
@@ -84,8 +123,33 @@ public class GameManager : MonoBehaviour
         // on crée les niveaux
         CreateLevels();
 
+        if (instructionsPanel != null)
+        {
+            instructionsPanel.SetActive(true);
+        }
+
+        if (tutorialMessagePanel != null)
+        {
+            tutorialMessagePanel.SetActive(true);
+        }
+
+        if (tutorialCompletePanel != null)
+        {
+            tutorialCompletePanel.SetActive(false);
+        }
+
         // on charge le premier niveau
         LoadLevel(0);
+    }
+    private void Update()
+    {
+        UpdateMiniMapPlayer();
+
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            Debug.Log("R détecté");
+            SceneManager.LoadScene("MainMenu");
+        }
     }
 
     void CreateLevels()
@@ -146,6 +210,25 @@ public class GameManager : MonoBehaviour
                 {1,1,1,1,1,1,1,1,1}
             }
         ));
+
+        // niveau 4 : porte XOR
+        levels.Add(new LogicLevelRuntime(
+            GateType.XOR,
+            "Porte XOR : La porte s'ouvre quand UNE SEULE entrée est activée !",
+            new int[,]
+            {
+                {1,1,1,1,1,1,1,1,1},
+                {1,5,0,0,1,0,0,0,1},
+                {1,0,1,0,1,0,1,0,1},
+                {1,0,1,0,0,0,1,0,1},
+                {1,0,1,1,1,1,1,0,1},
+                {1,0,0,0,2,0,0,0,1},
+                {1,1,1,0,1,0,1,1,1},
+                {1,0,0,0,0,0,0,3,1},
+                {1,0,1,1,4,1,1,0,1},
+                {1,1,1,1,1,1,1,1,1}
+            }
+        ));
     }
 
     public void LoadLevel(int index)
@@ -159,6 +242,17 @@ public class GameManager : MonoBehaviour
         // on démarre le chrono du niveau
         levelStartTime = Time.time;
 
+        // on remet aussi le timer visuel à zéro
+        if (timerUI == null)
+        {
+            timerUI = FindFirstObjectByType<Timer>();
+        }
+
+        if (timerUI != null)
+        {
+            timerUI.ResetTimer();
+        }
+
         // on supprime les anciens objets du niveau
         foreach (Transform child in levelParent)
         {
@@ -169,25 +263,43 @@ public class GameManager : MonoBehaviour
         inputA = false;
         inputB = false;
 
+        // pendant un niveau normal, le bouton A n'est pas activé
+        // exception pour NOT : on le met activé au départ pour forcer le joueur à le désactiver
+        if (levels[index].gateType == GateType.NOT)
+        {
+            inputA = true;
+        }
+
         // on vide l'ancienne référence de porte
         currentDoor = null;
 
-        // on récupère le niveau
+        // on récupère le niveau pour garder sa logique (OR / AND / NOT)
         LogicLevelRuntime level = levels[index];
 
+        // on génère un nouveau maze selon la difficulté actuelle
+        int[,] generatedMaze = MazeGenerator.GenerateMaze(
+            GetMazeSizeForCurrentDifficulty(),
+            level.gateType
+        );
+
+        // on garde ce maze en mémoire pour la mini-map
+        currentMaze = generatedMaze;
+
+        Debug.Log("Maze généré : " + generatedMaze.GetLength(0) + " x " + generatedMaze.GetLength(1));
+        
         // debug pour voir la taille cible du maze selon la difficulté actuelle
         Debug.Log("Difficulté actuelle : " + difficultyLevel);
         Debug.Log("Taille cible du maze : " + GetMazeSizeForCurrentDifficulty());
 
-        int rows = level.maze.GetLength(0);
-        int cols = level.maze.GetLength(1);
+        int rows = generatedMaze.GetLength(0);
+        int cols = generatedMaze.GetLength(1);
 
         // on parcourt toutes les cases du tableau
         for (int r = 0; r < rows; r++)
         {
             for (int c = 0; c < cols; c++)
             {
-                int cell = level.maze[r, c];
+                int cell = generatedMaze[r, c];
                 Vector3 pos = new Vector3(c * cellSize, 0, r * cellSize);
 
                 // on met du sol partout
@@ -214,12 +326,20 @@ public class GameManager : MonoBehaviour
                 // si la case vaut 4, on place la porte
                 if (cell == 4)
                 {
+                    Vector3 doorWorldPos = pos + new Vector3(0, 1f, 0);
+
                     currentDoor = Instantiate(
                         doorPrefab,
-                        pos + new Vector3(0, 1f, 0),
+                        doorWorldPos,
                         Quaternion.identity,
                         levelParent
                     );
+
+                    // on déplace aussi le trigger de sortie sur la porte générée
+                    if (exitTriggerTransform != null)
+                    {
+                        exitTriggerTransform.position = doorWorldPos;
+                    }
                 }
 
                 // si la case vaut 5, on place le joueur au départ
@@ -247,8 +367,43 @@ public class GameManager : MonoBehaviour
         // une fois la porte créée, on met son état visuel à jour
         UpdateDoorState();
 
-        // on met aussi l'interface à jour
+        // on met aussi l'interface logique à jour
         UpdateLogicUI();
+
+        // on met à jour les vies et le niveau affichés
+        UpdateStatusUI();
+        
+        // on met à jour la phrase d'instruction du niveau
+        UpdateLevelInstructionUI();
+
+        // on remet le panel d'instructions visible pendant les niveaux
+        if (instructionsPanel != null)
+        {
+            instructionsPanel.SetActive(true);
+        }
+
+        // on remet aussi le panel de tuto visible pendant les niveaux tuto
+        if (tutorialMessagePanel != null)
+        {
+            tutorialMessagePanel.SetActive(true);
+        }
+
+        // le panel de fin de tuto doit rester caché pendant un niveau
+        if (tutorialCompletePanel != null)
+        {
+            tutorialCompletePanel.SetActive(false);
+        }
+
+        // on met à jour le message du tuto selon le niveau actuel
+        UpdateTutorialMessage();
+
+        // on construit la mini-map avec le maze généré
+        if (miniMapUI != null)
+        {
+            miniMapUI.BuildMiniMap(generatedMaze);
+        }
+
+
     }
 
     // cette fonction inverse l'état de A
@@ -298,6 +453,12 @@ public class GameManager : MonoBehaviour
             return !a;
         }
 
+        // si la porte est XOR, une seule entrée doit être active
+        if (gate == GateType.XOR)
+        {
+            return a != b;
+        }
+
         // sécurité au cas où
         return false;
     }
@@ -331,6 +492,103 @@ public class GameManager : MonoBehaviour
 
         // on met à jour le panneau
         logicUI.RefreshUI(gateType, inputA, inputB, output);
+    }
+    
+    // cette fonction met à jour l'affichage des vies, du score, du niveau et de la difficulté
+    public void UpdateStatusUI()
+    {
+        // sécurité si aucune UI n'est reliée
+        if (statusUI == null) return;
+
+        // +1 parce que l'index commence à 0 mais le joueur doit voir 1, 2, 3...
+        statusUI.RefreshStatus(lives, score, currentLevelIndex + 1, difficultyLevel);
+    }
+
+    // cette fonction met à jour la phrase d'instruction du niveau
+    public void UpdateLevelInstructionUI()
+    {
+        if (levelInstructionText == null) return;
+
+        switch (currentLevelIndex)
+        {
+            case 0:
+                levelInstructionText.text = "Porte OR : Active A OU B pour ouvrir la porte !";
+                break;
+
+            case 1:
+                levelInstructionText.text = "Niveau réussi ! Porte AND : Active A ET B pour ouvrir la porte !";
+                break;
+
+            case 2:
+                levelInstructionText.text = "Niveau réussi ! Porte NOT : La sortie s'ouvre quand A est DÉSACTIVÉ !";
+                break;
+
+            case 3:
+                levelInstructionText.text = "Niveau réussi ! Porte XOR : La porte s'ouvre quand UNE SEULE entrée est activée !";
+                break;
+
+            default:
+                levelInstructionText.text = "";
+                break;
+        }
+    }
+
+    // cette fonction met à jour le message du tuto selon le niveau actuel
+    public void UpdateTutorialMessage()
+    {
+        if (tutorialMessageText == null) return;
+
+        switch (currentLevelIndex)
+        {
+            case 0:
+                tutorialMessageText.text = "Porte OR : Active A OU B pour ouvrir la porte !";
+                break;
+
+            case 1:
+                tutorialMessageText.text = "Porte AND : Active A ET B pour ouvrir la porte !";
+                break;
+
+            case 2:
+                tutorialMessageText.text = "Porte NOT : La sortie s'ouvre quand A est DÉSACTIVÉ !";
+                break;
+
+            case 3:
+                tutorialMessageText.text = "Porte XOR : La porte s'ouvre quand UNE SEULE entrée est activée !";
+                break;
+
+            default:
+                tutorialMessageText.text = "";
+                break;
+        }
+    }
+
+    // cette fonction affiche le panel de fin de tuto
+    public void ShowTutorialCompletePanel()
+    {
+        if (instructionsPanel != null)
+        {
+            instructionsPanel.SetActive(false);
+        }
+
+        if (tutorialMessagePanel != null)
+        {
+            tutorialMessagePanel.SetActive(false);
+        }
+
+        if (tutorialCompletePanel != null)
+        {
+            tutorialCompletePanel.SetActive(true);
+        }
+    }
+
+    // cette fonction met à jour le marqueur joueur sur la mini-map
+    public void UpdateMiniMapPlayer()
+    {
+        if (miniMapUI == null) return;
+        if (currentPlayer == null) return;
+        if (currentMaze == null) return;
+
+        miniMapUI.UpdatePlayerMarker(currentPlayer.transform.position, currentMaze.GetLength(0));
     }
     
     // cette fonction met à jour l'état visuel de la porte
@@ -445,7 +703,7 @@ public class GameManager : MonoBehaviour
         {
             consecutiveFastSuccesses += 1;
 
-            Debug.Log("Niveau fini rapidement ✅");
+            Debug.Log("Niveau fini rapidement");
             Debug.Log("Temps : " + lastCompletionTime + " / cible : " + targetTime);
         }
         else
@@ -453,7 +711,7 @@ public class GameManager : MonoBehaviour
             // si le joueur a été lent, on casse la série de réussites rapides
             consecutiveFastSuccesses = 0;
 
-            Debug.Log("Niveau réussi, mais trop lent ⏳");
+            Debug.Log("Niveau réussi, mais trop lent");
             Debug.Log("Temps : " + lastCompletionTime + " / cible : " + targetTime);
         }
 
@@ -463,7 +721,7 @@ public class GameManager : MonoBehaviour
             difficultyLevel = Mathf.Min(difficultyLevel + 1, 4);
             consecutiveFastSuccesses = 0;
 
-            Debug.Log("Difficulté augmentée ⬆️");
+            Debug.Log("Difficulté augmentée ⬆");
             Debug.Log("Nouvelle difficulté : " + difficultyLevel);
         }
 
@@ -473,7 +731,7 @@ public class GameManager : MonoBehaviour
             difficultyLevel = Mathf.Max(difficultyLevel - 1, 1);
             consecutiveFastSuccesses = 0;
 
-            Debug.Log("Difficulté baissée ⬇️");
+            Debug.Log("Difficulté baissée ⬇");
             Debug.Log("Nouvelle difficulté : " + difficultyLevel);
         }
     }
@@ -484,14 +742,29 @@ public class GameManager : MonoBehaviour
         // avant de changer de niveau, on ajuste la difficulté
         AdjustDifficulty();
 
+        // le joueur gagne des points quand il termine un niveau
+        score += 20;
+
+        // on met à jour le HUD tout de suite
+        UpdateStatusUI();
+
         // on passe au niveau suivant
         currentLevelIndex++;
 
-        // si on a fini tous les niveaux
+        // si on a fini les niveaux du tuto, on affiche le panel final
+        if (currentLevelIndex >= tutorialLevelCount)
+        {
+            gameFinished = true;
+            ShowTutorialCompletePanel();
+            Debug.Log("Tutoriel terminé !");
+            return;
+        }
+
+        // sécurité si jamais l'index dépasse la liste
         if (currentLevelIndex >= levels.Count)
         {
             gameFinished = true;
-            Debug.Log("Tous les niveaux sont terminés 🎉");
+            Debug.Log("Tous les niveaux sont terminés hihi");
             return;
         }
 
